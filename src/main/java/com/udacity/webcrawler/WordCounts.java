@@ -28,26 +28,17 @@ final class WordCounts {
   static Map<String, Integer> sort(Map<String, Integer> wordCounts, int popularWordCount) {
 
     // TODO: Reimplement this method using only the Stream API and lambdas and/or method references.
+    Map<String, Integer> topCounts = new LinkedHashMap<>();
+    wordCounts.entrySet() // because Map can't use stream directly then we need to convert it to entrySet
+            .stream() // using stream for functional programming
+            .sorted(new WordCountComparator()) // sorted using provided Comparator from stater code
+            .limit(popularWordCount) // just get limit word count from parameters
+            .forEachOrdered((e) -> {
+                // put the result after sort and limit to topCounts
+                topCounts.put(e.getKey(), e.getValue());
+            });
 
-//    PriorityQueue<Map.Entry<String, Integer>> sortedCounts =
-//        new PriorityQueue<>(wordCounts.size(), new WordCountComparator());
-//    sortedCounts.addAll(wordCounts.entrySet());
-//    Map<String, Integer> topCounts = new LinkedHashMap<>();
-//    for (int i = 0; i < Math.min(popularWordCount, wordCounts.size()); i++) {
-//      Map.Entry<String, Integer> entry = sortedCounts.poll();
-//      topCounts.put(entry.getKey(), entry.getValue());
-//    }
-
-//    return topCounts;
-
-    return wordCounts.entrySet()
-    .stream()
-    .sorted(new WordCountComparator())
-    .limit(popularWordCount)
-    .collect(Collectors.toMap(
-        Map.Entry::getKey,
-        Map.Entry::getValue,
-        (a, b) -> a, LinkedHashMap::new));
+    return topCounts;
   }
 
   /**

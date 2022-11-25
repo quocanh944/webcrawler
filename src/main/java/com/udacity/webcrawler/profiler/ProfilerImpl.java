@@ -4,12 +4,12 @@ import javax.inject.Inject;
 import java.io.IOException;
 import java.io.Writer;
 import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.ZonedDateTime;
+import java.util.Arrays;
 import java.util.Objects;
 
 import static java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME;
@@ -36,22 +36,21 @@ final class ProfilerImpl implements Profiler {
     // TODO: Use a dynamic proxy (java.lang.reflect.Proxy) to "wrap" the delegate in a
     //       ProfilingMethodInterceptor and return a dynamic proxy from this method.
     //       See https://docs.oracle.com/javase/10/docs/api/java/lang/reflect/Proxy.html.
-    boolean flag = false;
-    Method[] allMethods = klass.getDeclaredMethods();
 
-    for (Method m : allMethods) {
-      if (m.isAnnotationPresent(Profiled.class)) {
-        flag = true;
-        break;
-      }
+    if (Arrays.stream(klass.getDeclaredMethods()) // convert all methods declare in kclass to stream
+                                                  // using for functional programming
+            .noneMatch( // none element match with condition with lambdas
+                    e -> e.isAnnotationPresent(Profiled.class) // lambdas check profiled class
+            )) {
+      throw new IllegalArgumentException("It's not profiled."); // Throw exception
     }
 
-    if (!flag) {
-      throw new IllegalArgumentException("It's not profiled.");
-    }
-
+    // When a method is invoked on a proxy instance,
+    // the method invocation is encoded and dispatched to the invoke method of
+    // its invocation handler
     InvocationHandler invocationHandler = new ProfilingMethodInterceptor(clock, delegate, state);
 
+    // Using proxy and add invocation handler inside thí proxy
     T proxy = (T) Proxy.newProxyInstance(
               klass.getClassLoader(),
               new Class[]{klass},

@@ -1,7 +1,6 @@
 package com.udacity.webcrawler.profiler;
 
 import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Clock;
 import java.time.Duration;
@@ -33,21 +32,25 @@ final class ProfilingMethodInterceptor implements InvocationHandler {
     //       invoke the method using the object that is being profiled. Finally, for profiled
     //       methods, the interceptor should record how long the method call took, using the
     //       ProfilingState methods.
-    Instant startTime = null;
-    Object res = null;
+
+    // Check it is a profiled method
     if (method.isAnnotationPresent(Profiled.class)) {
-      startTime = clock.instant();
-    }
-    try {
-      res = method.invoke(object, args);
-    } catch (Throwable e) {
-      throw e.getCause();
-    } finally {
-      if (startTime != null) {
-        Duration duration = Duration.between(startTime, clock.instant());
-        profilingState.record(object.getClass(), method, duration);
+      // record the start time
+      Instant instant = clock.instant();
+      // invoke method using the object that is being profiled
+      try {
+        return method.invoke(object, args);
+      } catch (Throwable throwable) {
+        // The Throwable class is the superclass of all errors and exceptions in the Java language
+        throw throwable.getCause(); // Throw the cause of this throwable to the specified value.
+      } finally {
+        // record using profiling State record method
+        // calculate the time using Duration between instant mean start time
+        // and clock.instant mean end time
+        profilingState.record(object.getClass(), method, Duration.between(instant, clock.instant()));
       }
     }
-    return res;
+
+    return method.invoke(object, args);
   }
 }

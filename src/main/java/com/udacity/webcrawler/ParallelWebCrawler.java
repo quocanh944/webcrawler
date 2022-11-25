@@ -9,13 +9,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 import java.util.regex.Pattern;
 
 /**
- * A concrete implementation of {@link WebCrawler} that runs multiple threads on a
+ * A concrete implementation of {@link WebCrawler} that runs multiple threads on
+ * a
  * {@link ForkJoinPool} to fetch and process multiple web pages in parallel.
  */
 final class ParallelWebCrawler implements WebCrawler {
@@ -48,24 +48,28 @@ final class ParallelWebCrawler implements WebCrawler {
   @Override
   public CrawlResult crawl(List<String> startingUrls) {
     Instant deadline = clock.instant().plus(timeout);
-    Map<String, Integer> counts = new ConcurrentHashMap<>();
-    Set<String> visitedUrls = ConcurrentHashMap.newKeySet();
+    // Using Collections.synchronizedMap for the thread-safe data types
+    // Avoid counts can be access at the same time
+    // The same with Collections.synchronizedSet for visited urls
+    // Using set because I don't want duplicate element
+    Map<String, Integer> syncCounts = Collections.synchronizedMap(new HashMap<String, Integer>());
+    Set<String> syncVisitedUrls = Collections.synchronizedSet(new HashSet<String>());
 
     for (String url : startingUrls) {
-      pool.invoke(new crawlInternalTask(url, deadline, maxDepth, counts, visitedUrls));
+      pool.submit(new crawlInternalTask(url, deadline, maxDepth, syncCounts, syncVisitedUrls)).invoke();
     }
 
-    if (counts.isEmpty()) {
+    if (syncCounts.isEmpty()) {
       return new CrawlResult.Builder()
-              .setWordCounts(counts)
-              .setUrlsVisited(visitedUrls.size())
-              .build();
+        .setWordCounts(syncCounts)
+        .setUrlsVisited(syncVisitedUrls.size())
+        .build();
     }
 
     return new CrawlResult.Builder()
-            .setWordCounts(WordCounts.sort(counts, popularWordCount))
-            .setUrlsVisited(visitedUrls.size())
-            .build();
+        .setWordCounts(WordCounts.sort(syncCounts, popularWordCount))
+        .setUrlsVisited(syncVisitedUrls.size())
+        .build();
   }
 
   @Override
@@ -74,22 +78,47 @@ final class ParallelWebCrawler implements WebCrawler {
   }
 
   private final class crawlInternalTask extends RecursiveAction {
-    private final String url;
+    private String url;
     private final Instant deadline;
-    private final int maxDepth;
+    private int maxDepth;
     private final Map<String, Integer> counts;
-    private final Set<String> visitedUrls;
+    private Set<String> visitedUrls;
 
-    public crawlInternalTask(String url, Instant deadline, int maxDepth, Map<String, Integer> counts, Set<String> visitedUrls) {
+    public crawlInternalTask(String url, Instant deadline, int maxDepth, Map<String, Integer> counts,
+        Set<String> visitedUrls) {
       this.url = url;
       this.deadline = deadline;
       this.maxDepth = maxDepth;
       this.counts = counts;
       this.visitedUrls = visitedUrls;
     }
+    // Copy instance constructor
+    public crawlInternalTask(crawlInternalTask duplicate) {
+      this.url = duplicate.url;
+      this.deadline = duplicate.deadline;
+      this.maxDepth = duplicate.maxDepth;
+      this.counts = duplicate.counts;
+      this.visitedUrls = duplicate.visitedUrls;
+    }
+    // The ideal of Builder design pattern but in my style of coding
+    private crawlInternalTask setMaxDepth(int maxDepth) {
+      this.maxDepth = maxDepth;
+      return this;
+    }
+
+    private crawlInternalTask setVisitedUrls(Set<String> visitedUrls) {
+      this.visitedUrls = visitedUrls;
+      return this;
+    }
+
+    private crawlInternalTask setUrl(String url) {
+      this.url = url;
+      return this;
+    }
 
     @Override
     protected void compute() {
+      // Using algorithm from SequentialWebCrawler
       if (maxDepth == 0 || clock.instant().isAfter(deadline)) {
         return;
       }
@@ -111,13 +140,15 @@ final class ParallelWebCrawler implements WebCrawler {
         }
       }
 
-      List<crawlInternalTask> crawlInternalList = new ArrayList<>();
-
-      for (String link : result.getLinks()) {
-        crawlInternalList.add(new crawlInternalTask(link, deadline, maxDepth - 1, counts, visitedUrls));
+      for (String link: result.getLinks()) {
+        invokeAll(new crawlInternalTask(
+                this.setMaxDepth(maxDepth - 1) // decrease maxDepth by 1 after 1 times recursive
+                        .setVisitedUrls(visitedUrls) // update visitedUrls for next recursive
+                        .setUrl(link) // set the start url
+                )
+        );
       }
 
-      invokeAll(crawlInternalList);
     }
   }
 
